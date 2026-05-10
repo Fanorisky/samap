@@ -18,6 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          lfs: true
 
       - name: Install ImageMagick
         run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
@@ -40,11 +41,25 @@ jobs:
             exit 1
           fi
 
+          if grep -q '^version https://git-lfs.github.com/spec/v1$' "$input"; then
+            echo "Gagal: $input masih berupa Git LFS pointer, bukan file gambar asli."
+            exit 1
+          fi
+
+          if command -v magick >/dev/null 2>&1; then
+            img_tool="magick"
+          elif command -v convert >/dev/null 2>&1; then
+            img_tool="convert"
+          else
+            echo "Gagal: ImageMagick tidak tersedia (magick/convert tidak ditemukan)."
+            exit 1
+          fi
+
           original_size=$(stat -c%s "$input")
           echo "Ukuran awal: $original_size bytes"
 
           # Maksimalkan kualitas sambil menahan ukuran <= max_mb.
-          magick "$input" \
+          "$img_tool" "$input" \
             -sampling-factor 4:4:4 \
             -quality 100 \
             -define jpeg:extent="${max_mb}MB" \
