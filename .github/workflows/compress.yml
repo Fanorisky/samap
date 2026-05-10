@@ -1,0 +1,80 @@
+name: Compress samap.jpg
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - samap.jpg
+
+permissions:
+  contents: write
+
+jobs:
+  compress:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install ImageMagick
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+
+      - name: Compress to 10-20MB with best quality
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          input="samap.jpg"
+          min_mb=10
+          max_mb=20
+          min_bytes=$((min_mb * 1024 * 1024))
+          max_bytes=$((max_mb * 1024 * 1024))
+          tmp="$(mktemp --suffix=.jpg)"
+          trap 'rm -f "$tmp"' EXIT
+
+          if [[ ! -f "$input" ]]; then
+            echo "File $input tidak ditemukan."
+            exit 1
+          fi
+
+          original_size=$(stat -c%s "$input")
+          echo "Ukuran awal: $original_size bytes"
+
+          # Maksimalkan kualitas sambil menahan ukuran <= max_mb.
+          magick "$input" \
+            -sampling-factor 4:4:4 \
+            -quality 100 \
+            -define jpeg:extent="${max_mb}MB" \
+            "$tmp"
+
+          new_size=$(stat -c%s "$tmp")
+          echo "Ukuran hasil: $new_size bytes"
+
+          if (( new_size > max_bytes )); then
+            echo "Gagal: hasil masih lebih besar dari ${max_mb}MB."
+            exit 1
+          fi
+
+          if (( new_size < min_bytes )); then
+            echo "Peringatan: dengan kualitas terbaik di bawah ${max_mb}MB, ukuran jatuh di bawah ${min_mb}MB."
+            echo "Hasil tetap dipakai karena kualitas sudah dimaksimalkan."
+          fi
+
+          mv "$tmp" "$input"
+
+      - name: Commit result
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- samap.jpg; then
+            echo "Tidak ada perubahan untuk di-commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add samap.jpg
+          git commit -m "Compress samap.jpg to 10-20MB"
+          git push
