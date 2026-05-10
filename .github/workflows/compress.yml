@@ -20,8 +20,8 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Install ImageMagick
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+      - name: Install jpegoptim
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq jpegoptim
 
       - name: Compress to 10-20MB with best quality
         shell: bash
@@ -33,6 +33,7 @@ jobs:
           max_mb=20
           min_bytes=$((min_mb * 1024 * 1024))
           max_bytes=$((max_mb * 1024 * 1024))
+          target_kb=$((max_mb * 1024))
           tmp="$(mktemp --suffix=.jpg)"
           trap 'rm -f "$tmp"' EXIT
 
@@ -46,24 +47,12 @@ jobs:
             exit 1
           fi
 
-          if command -v magick >/dev/null 2>&1; then
-            img_tool="magick"
-          elif command -v convert >/dev/null 2>&1; then
-            img_tool="convert"
-          else
-            echo "Gagal: ImageMagick tidak tersedia (magick/convert tidak ditemukan)."
-            exit 1
-          fi
-
           original_size=$(stat -c%s "$input")
           echo "Ukuran awal: $original_size bytes"
 
-          # Maksimalkan kualitas sambil menahan ukuran <= max_mb.
-          "$img_tool" "$input" \
-            -sampling-factor 4:4:4 \
-            -quality 100 \
-            -define jpeg:extent="${max_mb}MB" \
-            "$tmp"
+          cp "$input" "$tmp"
+          # jpegoptim menurunkan kualitas seminimal mungkin agar <= target size.
+          jpegoptim --size="$target_kb" --all-progressive --strip-all "$tmp"
 
           new_size=$(stat -c%s "$tmp")
           echo "Ukuran hasil: $new_size bytes"
